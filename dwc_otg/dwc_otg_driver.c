@@ -723,6 +723,7 @@ static int dwc_otg_driver_probe(
 
 	memset(dwc_otg_device, 0, sizeof(*dwc_otg_device));
 	dwc_otg_device->os_dep.reg_offset = 0xFFFFFFFF;
+	dwc_otg_device->os_dep.platformdev = _dev;
 
 	/*
 	 * Map the DWC_otg Core memory into virtual address space.
@@ -1043,9 +1044,16 @@ static struct platform_device_id platform_ids[] = {
 };
 MODULE_DEVICE_TABLE(platform, platform_ids);
 
+static const struct of_device_id dwc_otg_of_match_table[] = {
+	{ .compatible = "brcm,bcm2708-usb", },
+	{},
+};
+MODULE_DEVICE_TABLE(of, dwc_otg_of_match_table);
+
 static struct platform_driver dwc_otg_driver = {
 	.driver = {
 		.name = (char *)dwc_driver_name,
+		.of_match_table = dwc_otg_of_match_table,
 		},
         .id_table = platform_ids,
 

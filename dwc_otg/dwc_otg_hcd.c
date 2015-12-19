@@ -1578,7 +1578,7 @@ int fiq_fsm_setup_periodic_dma(dwc_otg_hcd_t *hcd, struct fiq_channel_state *st,
 			/* Point the HC at the DMA address of the bounce buffers */
 			blob = (struct fiq_dma_blob *) hcd->fiq_state->dma_base;
 			st->hcdma_copy.d32 = (uint32_t) &blob->channel[hc->hc_num].index[0].buf[0];
-			
+
 			/* fixup xfersize to the actual packet size */
 			st->hctsiz_copy.b.pid = 0;
 			st->hctsiz_copy.b.xfersize = st->dma_info.slot_len[0];
@@ -1678,6 +1678,9 @@ int fiq_fsm_queue_isoc_transaction(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh)
 		}
 	}
 
+	st->hs_isoc_info.stride = qh->interval;
+	st->uframe_sleeps = 0;
+
 	fiq_print(FIQDBG_INT, hcd->fiq_state, "FSMQ  %01d ", hc->hc_num);
 	fiq_print(FIQDBG_INT, hcd->fiq_state, "%08x", st->hcchar_copy.d32);
 	fiq_print(FIQDBG_INT, hcd->fiq_state, "%08x", st->hctsiz_copy.d32);
@@ -1692,9 +1695,11 @@ int fiq_fsm_queue_isoc_transaction(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh)
 	DWC_WRITE_REG32(&hc_regs->hcintmsk, st->hcintmsk_copy.d32);
 	if (hfnum.b.frrem < PERIODIC_FRREM_BACKOFF) {
 		/* Prevent queueing near EOF1. Bad things happen if a periodic
-		 * split transaction is queued very close to EOF.
+		 * split transaction is queued very close to EOF. SOF interrupt handler
+		 * will wake this channel at the next interrupt.
 		 */
 		st->fsm = FIQ_HS_ISOC_SLEEPING;
+		st->uframe_sleeps = 1;
 	} else {
 		st->fsm = FIQ_HS_ISOC_TURBO;
 		st->hcchar_copy.b.chen = 1;
@@ -1886,7 +1891,7 @@ int fiq_fsm_queue_split_transaction(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh)
 	}
 	if ((fiq_fsm_mask & 0x8) && hc->ep_type == UE_INTERRUPT)
 		start_immediate = 1;
-	
+
 	fiq_print(FIQDBG_INT, hcd->fiq_state, "FSMQ %01d %01d", hc->hc_num, start_immediate);
 	fiq_print(FIQDBG_INT, hcd->fiq_state, "%08d", hfnum.b.frrem);
 	//fiq_print(FIQDBG_INT, hcd->fiq_state, "H:%02dP:%02d", hub_addr, port_addr);
@@ -2020,7 +2025,7 @@ dwc_otg_transaction_type_e dwc_otg_hcd_select_transactions(dwc_otg_hcd_t * hcd)
 		 * we hold off on bulk retransmissions to reduce NAK interrupt overhead for full-speed
 		 * cheeky devices that just hold off using NAKs
 		 */
-		if (nak_holdoff && qh->do_split) {
+		if (fiq_enable && nak_holdoff && qh->do_split) {
 			if (qh->nak_frame != 0xffff) {
 				uint16_t next_frame = dwc_frame_num_inc(qh->nak_frame, (qh->ep_type == UE_BULK) ? nak_holdoff : 8);
 				uint16_t frame = dwc_otg_hcd_get_frame_number(hcd);

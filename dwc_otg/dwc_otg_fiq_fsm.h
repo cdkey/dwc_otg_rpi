@@ -67,14 +67,14 @@ do {							\
 do {							\
 	writel(1<<x, __io_address(0x20200000+(0x28)));	\
 } while (0)
-#else 
+#else
 #define FLAME_ON(x) do { } while (0)
 #define FLAME_OFF(X) do { } while (0)
-#endif 
+#endif
 
 /* This is a quick-and-dirty arch-specific register read/write. We know that
  * writes to a peripheral on BCM2835 will always arrive in-order, also that
- * reads and writes are executed in-order therefore the need for memory barriers 
+ * reads and writes are executed in-order therefore the need for memory barriers
  * is obviated if we're only talking to USB.
  */
 #define FIQ_WRITE(_addr_,_data_) (*(volatile unsigned int *) (_addr_) = (_data_))
@@ -185,8 +185,8 @@ enum fiq_fsm_state {
 	FIQ_PER_SSPLIT_QUEUED = 8,
 	FIQ_PER_SSPLIT_STARTED = 9,
 	FIQ_PER_SSPLIT_LAST = 10,
-	
-	
+
+
 	FIQ_PER_ISO_OUT_PENDING = 11,
 	FIQ_PER_ISO_OUT_ACTIVE = 12,
 	FIQ_PER_ISO_OUT_LAST = 13,
@@ -209,7 +209,7 @@ enum fiq_fsm_state {
 	FIQ_PER_SPLIT_NYET_ABORTED = 21,
 	/* Frame rollover has occurred without the transaction finishing. */
 	FIQ_PER_SPLIT_TIMEOUT = 22,
-	
+
 	/* FIQ-accelerated HS Isochronous state groups */
 	FIQ_HS_ISOC_TURBO = 23,
 	/* For interval > 1, SOF wakes up the isochronous FSM */
@@ -260,12 +260,13 @@ struct fiq_dma_blob {
  * @iso_frame:	Pointer to the array of OTG URB iso_frame_descs.
  * @nrframes:	Total length of iso_frame_desc array
  * @index:	Current index (FIQ-maintained)
- *
+ * @stride:	Interval in uframes between HS isoc transactions
  */
 struct fiq_hs_isoc_info {
 	struct dwc_otg_hcd_iso_packet_desc *iso_desc;
 	unsigned int nrframes;
 	unsigned int index;
+	unsigned int stride;
 };
 
 /**
@@ -295,14 +296,16 @@ struct fiq_channel_state {
 	unsigned int port_addr;
 	/* Hardware bug workaround: sometimes channel halt interrupts are
 	 * delayed until the next SOF. Keep track of when we expected to get interrupted. */
-	unsigned int expected_uframe; 
+	unsigned int expected_uframe;
+	/* number of uframes remaining (for interval > 1 HS isoc transfers) before next transfer */
+	unsigned int uframe_sleeps;
 	/* in/out for communicating number of dma buffers used, or number of ISOC to do */
 	unsigned int nrpackets;
 	struct fiq_dma_info dma_info;
 	struct fiq_hs_isoc_info hs_isoc_info;
 	/* Copies of HC registers - in/out communication from/to IRQ handler
 	 * and for ease of channel setup. A bit of mungeing is performed - for
-	 * example the hctsiz.b.maxp is _always_ the max packet size of the endpoint. 
+	 * example the hctsiz.b.maxp is _always_ the max packet size of the endpoint.
 	 */
 	hcchar_data_t hcchar_copy;
 	hcsplt_data_t hcsplt_copy;

@@ -36,7 +36,6 @@
 #include "dwc_otg_regs.h"
 
 #include <linux/jiffies.h>
-#include <mach/hardware.h>
 #include <asm/fiq.h>
 
 
@@ -116,7 +115,7 @@ int32_t dwc_otg_hcd_handle_intr(dwc_otg_hcd_t * dwc_otg_hcd)
 			gintsts.b.sofintr = 1;
 		}
 		gintsts.d32 &= gintmsk.d32;
-		
+
 		if (fiq_enable) {
 			fiq_fsm_spin_unlock(&dwc_otg_hcd->fiq_state->lock);
 			local_fiq_enable();
@@ -2298,10 +2297,10 @@ void dwc_otg_fiq_unmangle_isoc(dwc_otg_hcd_t *hcd, dwc_otg_qh_t *qh, dwc_otg_qtd
 			dwc_urb->error_count++;
 		}
 	}
+	qh->sched_frame = dwc_frame_num_inc(qh->sched_frame, qh->interval * (nr_frames - 1));
+
 	//printk_ratelimited(KERN_INFO "%s: HS isochronous of %d/%d frames with %d errors complete\n",
 	//			__FUNCTION__, i, dwc_urb->packet_count, dwc_urb->error_count);
-	hcd->fops->complete(hcd, dwc_urb->priv, dwc_urb, 0);
-	release_channel(hcd, qh->channel, qtd, DWC_OTG_HC_XFER_URB_COMPLETE);
 }
 
 /**
@@ -2544,6 +2543,8 @@ void dwc_otg_hcd_handle_hc_fsm(dwc_otg_hcd_t *hcd, uint32_t num)
 		 * fail.
 		 */
 		dwc_otg_fiq_unmangle_isoc(hcd, qh, qtd, num);
+		hcd->fops->complete(hcd, qtd->urb->priv, qtd->urb, 0);
+		release_channel(hcd, hc, qtd, DWC_OTG_HC_XFER_URB_COMPLETE);
 		break;
 
 	case FIQ_PER_SPLIT_LS_ABORTED:

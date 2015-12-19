@@ -402,6 +402,7 @@ static void hcd_init_fiq(void *cookie)
 	dwc_otg_device_t *otg_dev = cookie;
 	dwc_otg_hcd_t *dwc_otg_hcd = otg_dev->hcd;
 	struct pt_regs regs;
+	int irq;
 
 	if (claim_fiq(&fh)) {
 		DWC_ERROR("Can't claim FIQ");
@@ -445,7 +446,16 @@ static void hcd_init_fiq(void *cookie)
 		DWC_WARN("MPHI periph has NOT been enabled");
 #endif
 	// Enable FIQ interrupt from USB peripheral
-	enable_fiq(INTERRUPT_VC_USB);
+#ifdef CONFIG_MULTI_IRQ_HANDLER
+	irq = platform_get_irq(otg_dev->os_dep.platformdev, 1);
+#else
+	irq = INTERRUPT_VC_USB;
+#endif
+	if (irq < 0) {
+		DWC_ERROR("Can't get FIQ irq");
+		return;
+	}
+	enable_fiq(irq);
 	local_fiq_enable();
 }
 
@@ -536,9 +546,9 @@ int hcd_init(dwc_bus_dev_t *_dev)
 	 * IRQ line, and calls hcd_start method.
 	 */
 #ifdef PLATFORM_INTERFACE
-	retval = usb_add_hcd(hcd, platform_get_irq(_dev, fiq_enable ? 0 : 1), IRQF_SHARED | IRQF_DISABLED);
+	retval = usb_add_hcd(hcd, platform_get_irq(_dev, fiq_enable ? 0 : 1), IRQF_SHARED);
 #else
-	retval = usb_add_hcd(hcd, _dev->irq, IRQF_SHARED | IRQF_DISABLED);	
+	retval = usb_add_hcd(hcd, _dev->irq, IRQF_SHARED);
 #endif
 	if (retval < 0) {
 		goto error2;
@@ -766,16 +776,17 @@ static int dwc_otg_urb_enqueue(struct usb_hcd *hcd,
 						   !(usb_pipein(urb->pipe))));
 
 	buf = urb->transfer_buffer;
-	if (hcd->self.uses_dma) {
+	if (hcd->self.uses_dma && !buf && urb->transfer_buffer_length) {
 		/*
 		 * Calculate virtual address from physical address,
 		 * because some class driver may not fill transfer_buffer.
 		 * In Buffer DMA mode virual address is used,
 		 * when handling non DWORD aligned buffers.
 		 */
-		//buf = phys_to_virt(urb->transfer_dma);
-                // DMA addresses are bus addresses not physical addresses!
-                buf = dma_to_virt(&urb->dev->dev, urb->transfer_dma);
+		buf = (void *)__bus_to_virt((unsigned long)urb->transfer_dma);
+		dev_warn_once(&urb->dev->dev,
+			      "USB transfer_buffer was NULL, will use __bus_to_virt(%pad)=%p\n",
+			      &urb->transfer_dma, buf);
 	}
 
 	if (!(urb->transfer_flags & URB_NO_INTERRUPT))

@@ -78,4 +78,3 @@ ENTRY(_dwc_otg_fiq_stub)
 	subs pc, lr, #4;
 _dwc_otg_fiq_stub_end:
 END(_dwc_otg_fiq_stub)
-
